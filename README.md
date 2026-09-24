@@ -16,8 +16,23 @@ The agent uses a [ReAct](https://arxiv.org/abs/2210.03629) (Reason + Act) loop: 
 
 ### 2. Install dependencies
 
+Runtime only:
+
 ```bash
 pip install -r requirements.txt
+```
+
+Runtime + dev tools (linting, type checking, tests):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Or with `uv` (faster, uses the pinned lock files):
+
+```bash
+uv pip install -r requirements.lock          # runtime
+uv pip install -r requirements-dev.lock      # runtime + dev
 ```
 
 ### 3. Configure the API key

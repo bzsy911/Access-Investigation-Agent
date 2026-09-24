@@ -214,7 +214,7 @@ All core code is written and tested. The project is runnable from a clean checko
 | `tools.py` | ✅ done | 9 SQL-backed tool functions |
 | `prompts.py` | ✅ done | System prompt + compact schema digest (~600 tokens) |
 | `runner.py` | ✅ done | OpenRouter API wrapper (thin `openai` SDK shim) |
-| `demo.py` | ✅ done | Quick launcher for three prepared demo investigations (offboarding, MFA, drive permissions) |
+| `demo.py` | ✅ done | Quick launcher for six prepared demos: three successful investigations + three adversarial questions that expose tool limits via the structured `cannot_proceed` fallback |
 | `tests/test_tools.py` | ✅ done | 54 unit tests — all passing |
 | `README.md` | ✅ done | Setup, usage, architecture, limitations |
 | `requirements.txt` | ✅ done | `openai>=1.30.0`, `python-dotenv>=1.0.0` |
@@ -230,9 +230,19 @@ source .venv/bin/activate
 cp .env.example .env   # then fill in OPENROUTER_API_KEY
 
 # 3. Run the prepared demos
-python demo.py          # both demos
-python demo.py 1        # offboarding gaps only
-python demo.py 2        # MFA gaps only
+python demo.py               # all six demos (successful first, then adversarial)
+python demo.py success       # only the three successful investigations
+python demo.py adversarial   # only the three adversarial / limit-exposure demos
+python demo.py 1             # demo 1 only (offboarding gaps)
+python demo.py 1 2 3         # run specific demos by ID
+
+# Demo IDs:
+#   Successful:   1 — Offboarding Residual Access
+#                 2 — MFA Gap Analysis
+#                 3 — Post-Termination Activity Deep Dive
+#   Adversarial:  4 — Drive Permissions Across All Ended Employees (tool gap)
+#                 5 — OAuth Scope Sprawl (unsupported query pattern)
+#                 6 — Unusual IP Login Detection (out of scope)
 
 # 4. Run an ad-hoc investigation
 python agent.py "Which former employees still have active accounts?"

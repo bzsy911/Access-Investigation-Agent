@@ -1,19 +1,21 @@
 """
 agent.py — Entry point for the Access Investigation Agent.
 
-Usage:
+Usage::
+
     python agent.py "Which former employees still have active accounts?"
     python agent.py --steps 15 "Which critical-app users lack MFA?"
     python agent.py --debug "Show all drive permissions for account ws_acc_0042"
 
-The agent runs a ReAct loop:
-  1. Send the user question + conversation history to the model.
-  2. If the model returns tool calls, execute them and append results.
-  3. If the model returns plain text (final answer), print and exit.
-  4. Repeat until the step budget is exhausted.
+The agent runs a ReAct (Reason + Act) loop:
 
-All output goes to stdout. Intermediate reasoning is printed with a prefix
-so it can be visually distinguished from the final answer.
+1. Send the user question and conversation history to the model.
+2. If the model returns tool calls, execute each one and append the results.
+3. If the model returns plain text (no tool calls), treat it as the final answer.
+4. Repeat until the model gives a text answer or the step budget is exhausted.
+
+All output goes to stdout.  Intermediate tool calls are printed with an
+indented prefix so they are visually distinct from the final structured answer.
 """
 
 import argparse
@@ -21,6 +23,7 @@ import json
 import os
 import sys
 import textwrap
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -34,6 +37,7 @@ DEFAULT_MAX_STEPS = int(os.environ.get("MAX_STEPS", "12"))
 
 
 def _print_section(title: str, content: str, indent: int = 0) -> None:
+    """Print a labelled section block to stdout, used in debug mode."""
     prefix = "  " * indent
     print(f"\n{prefix}{'─' * 60}")
     print(f"{prefix}  {title}")
@@ -42,18 +46,29 @@ def _print_section(title: str, content: str, indent: int = 0) -> None:
         print(f"{prefix}  {line}")
 
 
-def _execute_tool(name: str, arguments: dict, debug: bool = False) -> str:
-    """Call a tool function and return its JSON-serialised result."""
+def _execute_tool(name: str, arguments: dict[str, Any], debug: bool = False) -> str:
+    """Call a named tool function and return its JSON-serialised result.
+
+    Args:
+        name:      Tool name as returned by the model's tool call.
+        arguments: Keyword arguments parsed from the model's tool call JSON.
+        debug:     When ``True``, print the full result to stdout.
+
+    Returns:
+        A JSON string ready to be sent back to the model as a tool message.
+        Errors are wrapped in ``{"error": "..."}`` so the model can reason
+        about them rather than crashing the loop.
+    """
     fn = TOOL_FUNCTIONS.get(name)
     if fn is None:
-        result = {"error": f"Unknown tool: {name!r}"}
+        result: dict[str, Any] = {"error": f"Unknown tool: {name!r}"}
     else:
         try:
             result = fn(**arguments)
         except TypeError as exc:
             result = {"error": f"Invalid arguments for {name!r}: {exc}"}
         except Exception as exc:  # noqa: BLE001
-            result = {"error": f"Tool {name!r} raised an exception: {exc}"}
+            result = {"error": f"Tool {name!r} raised an unexpected exception: {exc}"}
 
     serialised = json.dumps(result, indent=2, default=str)
     if debug:
@@ -65,10 +80,26 @@ def _execute_tool(name: str, arguments: dict, debug: bool = False) -> str:
     return serialised
 
 
-def run_investigation(question: str, max_steps: int = DEFAULT_MAX_STEPS, debug: bool = False) -> str:
-    """
-    Run the ReAct loop for a single investigation question.
-    Returns the final answer text.
+def run_investigation(
+    question: str,
+    max_steps: int = DEFAULT_MAX_STEPS,
+    debug: bool = False,
+) -> str:
+    """Run the ReAct loop for a single investigation question.
+
+    Sends the question to the model and iterates tool-call/result cycles until
+    the model produces a final text answer or the ``max_steps`` budget runs out.
+
+    Args:
+        question:  The natural-language investigation question.
+        max_steps: Maximum number of tool calls before forcing a summary
+                   (default from ``MAX_STEPS`` env var, fallback 12).
+        debug:     Print full tool inputs and outputs to stdout when ``True``.
+
+    Returns:
+        The model's final answer as a raw string.  Typically contains a
+        fenced JSON block with the structured finding; pass the return value
+        to ``_print_final_answer()`` for formatted display.
     """
     # Determine which tools to expose (hide run_sql unless DEBUG_SQL is on)
     debug_sql = os.environ.get("DEBUG_SQL", "false").lower() == "true"
@@ -170,7 +201,16 @@ def run_investigation(question: str, max_steps: int = DEFAULT_MAX_STEPS, debug: 
 
 
 def _print_final_answer(answer: str) -> None:
-    """Pretty-print the final answer, extracting the JSON block if present."""
+    """Pretty-print the final answer to stdout.
+
+    Extracts the first fenced JSON block from the answer string and renders
+    it in a human-friendly format:
+
+    - Structured findings are listed with severity labels and evidence IDs.
+    - ``cannot_proceed`` responses are rendered under a distinct warning header
+      with the reason, missing capability, and alternative command.
+    - If no JSON block is found, the raw answer is printed as-is.
+    """
     print("\n" + "═" * 64)
     print("  INVESTIGATION RESULT")
     print("═" * 64)
@@ -230,6 +270,7 @@ def _print_final_answer(answer: str) -> None:
 
 
 def main() -> None:
+    """Parse CLI arguments and run a single investigation, then exit."""
     parser = argparse.ArgumentParser(
         description="Access Investigation Agent — investigate employee access using LLM + tools."
     )

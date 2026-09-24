@@ -1,18 +1,22 @@
 """
 tools.py — All tool implementations for the Access Investigation Agent.
 
-Design principles:
-- Every tool opens the database read-only and applies PRAGMA query_only=ON.
-- Results are capped at MAX_ROWS (default 50) to control context size.
-- Every result includes a _meta dict with total_count, returned, truncated, query_time_ms.
-- Token budget: each result is trimmed to ~2000 tokens worth of text.
-- The model never writes SQL; it calls these named functions.
+Design principles
+-----------------
+- Every tool opens the database **read-only** with ``PRAGMA query_only=ON``.
+- Results are capped at ``MAX_ROWS`` (default 50) to control context size.
+- Every result includes a ``_meta`` dict:
+  ``{total_count, returned, truncated, query_time_ms}``.
+- Each result is serialised to JSON and trimmed to ``CHAR_BUDGET`` characters
+  (~6 000 chars ≈ ~1 500 tokens) before being returned to the agent.
+- The model never constructs raw SQL; it calls these named functions.
 """
 
 import json
 import os
 import sqlite3
 import time
+from collections.abc import Callable
 from typing import Any
 
 DB_PATH = os.environ.get("DB_PATH", "input_data/access_snapshot.sqlite")
@@ -24,7 +28,12 @@ MAX_GROUP_DEPTH = 3
 
 
 def _connect() -> sqlite3.Connection:
-    """Open a read-only connection to the snapshot database."""
+    """Open a read-only connection to the snapshot database.
+
+    Uses the SQLite URI filename syntax so the OS-level file lock is also
+    read-only.  ``PRAGMA query_only = ON`` adds a second layer of protection
+    inside the connection.
+    """
     uri = f"file:{DB_PATH}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -32,7 +41,8 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict]:
+def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    """Convert a list of ``sqlite3.Row`` objects to plain dicts."""
     return [dict(r) for r in rows]
 
 
@@ -42,13 +52,20 @@ _PROTECTED_LIST_KEYS = frozenset(
 )
 
 
-def _trim(result: dict, primary_key: str | None = None) -> dict:
-    """
-    Serialise result to JSON; if over budget, trim the primary data list.
+def _trim(result: dict[str, Any], primary_key: str | None = None) -> dict[str, Any]:
+    """Trim ``result`` so its JSON representation fits within ``CHAR_BUDGET``.
 
-    primary_key: the list key to trim (e.g. 'people', 'gaps', 'events').
-    If not supplied, the first non-protected list key is used.
-    Protected lists (small summary/metadata lists) are never trimmed.
+    Repeatedly halves the primary data list until the serialised size is under
+    budget.  Small metadata lists (``_PROTECTED_LIST_KEYS``) are never touched.
+
+    Args:
+        result:      The tool result dict to trim (mutated in place via copy).
+        primary_key: The list key to trim (e.g. ``"people"``, ``"gaps"``).
+                     When omitted the first non-protected list key is used.
+
+    Returns:
+        The (possibly trimmed) result dict with ``_meta.truncated`` set to
+        ``True`` if any rows were removed.
     """
     if len(json.dumps(result, default=str)) <= CHAR_BUDGET:
         return result
@@ -77,7 +94,8 @@ def _trim(result: dict, primary_key: str | None = None) -> dict:
     return result
 
 
-def _meta(total: int, returned: int, t0: float, truncated: bool = False) -> dict:
+def _meta(total: int, returned: int, t0: float, truncated: bool = False) -> dict[str, Any]:
+    """Build the standard ``_meta`` dict appended to every tool result."""
     return {
         "total_count": total,
         "returned": returned,
@@ -109,7 +127,13 @@ LOOKUP_PERSON_SCHEMA = {
 }
 
 
-def lookup_person(query: str) -> dict:
+def lookup_person(query: str) -> dict[str, Any]:
+    """Look up a person by name fragment, email, or ``person_id``.
+
+    Returns the matching HR records and all linked accounts across IdP,
+    Workspace, GitHub, and MDM.  Results are capped at ``MAX_ROWS`` and
+    serialised within ``CHAR_BUDGET``.
+    """
     t0 = time.monotonic()
     conn = _connect()
     try:
@@ -207,7 +231,19 @@ FIND_OFFBOARDING_GAPS_SCHEMA = {
 def find_offboarding_gaps(
     statuses: list[str] | None = None,
     systems: list[str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
+    """Find people whose employment has ended (or is on leave) but who still
+    have at least one active account in the requested systems.
+
+    Args:
+        statuses: Employment statuses to check; defaults to ``["ended"]``.
+        systems:  Systems to check (``"idp"``, ``"workspace"``, ``"github"``);
+                  defaults to all three.
+
+    Returns:
+        ``{"gaps": [...], "_meta": {...}}`` — each gap entry contains the
+        person record plus an ``"active_accounts"`` dict keyed by system.
+    """
     t0 = time.monotonic()
     if statuses is None:
         statuses = ["ended"]
@@ -295,7 +331,22 @@ GET_PERSON_ACCESS_SUMMARY_SCHEMA = {
 }
 
 
-def get_person_access_summary(person_id: str) -> dict:
+def get_person_access_summary(person_id: str) -> dict[str, Any]:
+    """Return a full access summary for a single person.
+
+    Includes IdP accounts (with group memberships), application access with
+    MFA status, Workspace accounts, Drive permissions, and GitHub permissions
+    (both direct collaborator grants and team-inherited permissions).
+
+    Args:
+        person_id: The ``person_id`` primary key from the ``people`` table.
+
+    Returns:
+        A dict with keys ``person``, ``idp_accounts``, ``application_access``,
+        ``workspace_accounts``, ``drive_permissions``, ``github_accounts``,
+        ``github_permissions``, and ``_meta``.  Returns ``{"error": ...}`` when
+        the person is not found.
+    """
     t0 = time.monotonic()
     conn = _connect()
     try:
@@ -456,7 +507,22 @@ def get_mfa_gaps(
     sensitivity: str = "sensitive",
     application_id: str | None = None,
     mfa_required_only: bool = False,
-) -> dict:
+) -> dict[str, Any]:
+    """Find active users on sensitive/critical apps without MFA enrolled.
+
+    Args:
+        sensitivity:    Minimum app sensitivity; ``"sensitive"`` includes both
+                        sensitive and critical apps, ``"critical"`` restricts to
+                        critical only.
+        application_id: Restrict results to a single application when provided.
+        mfa_required_only: If ``True``, only return gaps for apps where
+                           ``default_mfa_requirement = 'required'``.
+
+    Returns:
+        ``{"summary_by_app": [...], "gaps": [...], "_meta": {...}}``.
+        ``summary_by_app`` aggregates gap counts per application and is never
+        truncated.  ``gaps`` is trimmed to fit ``CHAR_BUDGET``.
+    """
     t0 = time.monotonic()
     conn = _connect()
     try:
@@ -568,7 +634,26 @@ def get_audit_events(
     event_type: str | None = None,
     since: str | None = None,
     limit: int = 30,
-) -> dict:
+) -> dict[str, Any]:
+    """Return audit events matching the supplied filters.
+
+    At least one of ``actor_id`` or ``target_id`` must be provided.
+
+    Args:
+        actor_id:   Filter by this actor ID (account, person, or service ID).
+        target_id:  Filter by this target ID.
+        system:     Restrict to one source system
+                    (``"hr"``, ``"idp"``, ``"workspace"``, ``"github"``, ``"mdm"``).
+        event_type: Restrict to a specific event type string
+                    (e.g. ``"user.login"``, ``"repository.pushed"``).
+        since:      ISO 8601 timestamp; only return events at or after this time.
+        limit:      Maximum rows to return (default 30, hard cap 100).
+
+    Returns:
+        ``{"events": [...], "_meta": {...}}``.  Each event has its
+        ``details_json`` column parsed into a ``"details"`` dict.
+        Returns ``{"error": ...}`` when neither filter is provided.
+    """
     t0 = time.monotonic()
     if actor_id is None and target_id is None:
         return {
@@ -665,7 +750,23 @@ GET_APPLICATION_SUMMARY_SCHEMA = {
 def get_application_summary(
     application_id: str | None = None,
     app_name: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
+    """Return metadata for an application plus MFA enrollment stats and recent auth events.
+
+    Provide either ``application_id`` or a partial ``app_name`` to locate the
+    application.
+
+    Args:
+        application_id: Exact application ID.
+        app_name:       Partial name to search (``LIKE %app_name%``); first
+                        alphabetical match is used.
+
+    Returns:
+        ``{"application": {...}, "mfa_enrollment_stats": [...],
+        "active_users_sample": [...], "recent_auth_events": [...], "_meta": {...}}``.
+        Returns ``{"error": ...}`` when no matching application is found or
+        when neither argument is supplied.
+    """
     t0 = time.monotonic()
     if not application_id and not app_name:
         return {
@@ -788,7 +889,20 @@ def get_drive_permissions(
     resource_id: str | None = None,
     account_id: str | None = None,
     highlight_external: bool = False,
-) -> dict:
+) -> dict[str, Any]:
+    """Return non-revoked Drive permissions for a resource or account.
+
+    Args:
+        resource_id:        Return all permissions on this Drive resource.
+        account_id:         Return all permissions where this Workspace account
+                            is the principal.
+        highlight_external: When ``True``, restrict to ``external_email`` and
+                            ``domain`` principals only.
+
+    Returns:
+        ``{"permissions": [...], "_meta": {...}}``.  Returns ``{"error": ...}``
+        when neither ``resource_id`` nor ``account_id`` is provided.
+    """
     t0 = time.monotonic()
     if not resource_id and not account_id:
         return {"error": "Provide resource_id or account_id.", "_meta": _meta(0, 0, t0)}
@@ -868,7 +982,20 @@ GET_GROUP_MEMBERS_SCHEMA = {
 }
 
 
-def get_group_members(group_id: str, group_type: str = "idp") -> dict:
+def get_group_members(group_id: str, group_type: str = "idp") -> dict[str, Any]:
+    """Recursively resolve all members of an IdP or Workspace group.
+
+    Expands nested sub-groups up to ``MAX_GROUP_DEPTH`` (3) levels deep.
+    Cycle detection prevents infinite loops in self-referential group graphs.
+
+    Args:
+        group_id:   The ``group_id`` to resolve.
+        group_type: ``"idp"`` (default) or ``"workspace"``.
+
+    Returns:
+        ``{"group": {...}, "resolved_accounts": [...], "groups_visited": [...],
+        "_meta": {...}}``.  Returns ``{"error": ...}`` when the group is not found.
+    """
     t0 = time.monotonic()
     conn = _connect()
     try:
@@ -1004,7 +1131,23 @@ RUN_SQL_SCHEMA = {
 }
 
 
-def run_sql(sql: str, limit: int = 50) -> dict:
+def run_sql(sql: str, limit: int = 50) -> dict[str, Any]:
+    """Execute an arbitrary read-only SELECT against the database.
+
+    **Disabled by default.**  Only available when the ``DEBUG_SQL`` environment
+    variable is set to ``"true"``.  Every call is logged for auditability.
+
+    Args:
+        sql:   A ``SELECT`` statement to execute.  Non-SELECT statements are
+               rejected.
+        limit: Row limit appended to the query when not already present
+               (default 50).
+
+    Returns:
+        ``{"rows": [...], "_meta": {...}}``.  Returns ``{"error": ...}`` when
+        disabled, when the statement is not a ``SELECT``, or when the query
+        raises a database error.
+    """
     t0 = time.monotonic()
     debug = os.environ.get("DEBUG_SQL", "false").lower() == "true"
     if not debug:
@@ -1030,7 +1173,7 @@ def run_sql(sql: str, limit: int = 50) -> dict:
             "_meta": _meta(len(rows), len(rows), t0),
         }
         return _trim(result)
-    except Exception as exc:
+    except sqlite3.Error as exc:
         return {"error": str(exc), "_meta": _meta(0, 0, t0)}
     finally:
         conn.close()
@@ -1052,7 +1195,7 @@ TOOL_SCHEMAS = [
     RUN_SQL_SCHEMA,
 ]
 
-TOOL_FUNCTIONS: dict[str, Any] = {
+TOOL_FUNCTIONS: dict[str, Callable[..., dict[str, Any]]] = {
     "lookup_person": lookup_person,
     "find_offboarding_gaps": find_offboarding_gaps,
     "get_person_access_summary": get_person_access_summary,

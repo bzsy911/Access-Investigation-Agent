@@ -1,0 +1,39 @@
+
+🔍  Investigation: Show me the full access profile for Rowan Mercer: all accounts, group memberships, application access, and any audit events after their employment ended.
+
+  ↳ lookup_person({"query":"Rowan Mercer"})
+  ↳ get_person_access_summary({"person_id":"per_001941"})
+  ↳ get_audit_events({"actor_id":"idpa_001941","since":"2026-07-25T00:00:00Z"})
+  ↳ get_audit_events({"actor_id":"gha_001941","system":"github","since":"2026-07-25T00:00:00Z"})
+  ↳ get_audit_events({"actor_id":"gwa_001941","since":"2026-07-25T00:00:00Z","system":"workspace"})
+  ↳ find_offboarding_gaps({"systems":["idp","workspace","github"],"statuses":["ended"]})
+
+════════════════════════════════════════════════════════════════
+  INVESTIGATION RESULT
+════════════════════════════════════════════════════════════════
+
+Reasoning:
+Rowan Mercer's employment ended on 2026-07-25. However, the audit logs show activity on GitHub and Workspace accounts after this date. The `find_offboarding_gaps` tool also confirms that Rowan Mercer has active accounts in IdP, Workspace, and GitHub after their employment ended.
+
+Final Answer:
+
+
+📋  Structured Finding
+
+  Conclusion : Rowan Mercer, whose employment ended on 2026-07-25, still has active accounts in IdP, Workspace, and GitHub. Furthermore, there is evidence of activity on their GitHub and Workspace accounts after their end date.
+  Steps used : 6
+  Uncertainty: The exact nature of the accessed GitHub repositories and Drive resource is unknown without further investigation into those specific resources.
+
+  Findings (3):
+
+  [1] [HIGH] Rowan Mercer has active IdP, Workspace, and GitHub accounts despite their employment having ended on 2026-07-25. This indicates a potential offboarding gap.
+       Evidence IDs: per_001941, idpa_001941, gwa_001941, gha_001941
+
+  [2] [HIGH] Rowan Mercer's GitHub account (gha_001941) was used to push to 'identity-service' repository (ghr_000001) on 2026-08-14T18:36:44Z and fetched 'ghr_000039' repository on 2026-08-10T05:46:39Z, both after their employment end date.
+       Evidence IDs: gha_001941, evt_00048004, evt_00014550, ghr_000001, ghr_000039
+
+  [3] [HIGH] Rowan Mercer's Workspace account (gwa_001941) viewed a Drive resource (drv_000110) on 2026-08-12T01:31:13Z and had a successful login on 2026-08-05T02:04:06Z, both after their employment end date.
+       Evidence IDs: gwa_001941, evt_00018627, evt_00023825, drv_000110
+
+════════════════════════════════════════════════════════════════
+

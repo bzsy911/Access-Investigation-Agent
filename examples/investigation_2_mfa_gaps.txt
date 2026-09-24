@@ -1,0 +1,35 @@
+
+════════════════════════════════════════════════════════════════
+  DEMO 2 [SUCCESSFUL] — MFA Gap Analysis
+════════════════════════════════════════════════════════════════
+
+🔍  Investigation: Which users on critical apps are not enrolled in MFA?
+
+  ↳ get_mfa_gaps({"sensitivity":"critical"})
+
+════════════════════════════════════════════════════════════════
+  INVESTIGATION RESULT
+════════════════════════════════════════════════════════════════
+
+The following users are not enrolled in MFA for critical applications. Note that the results are truncated, so there may be more users.
+
+### AWS Console (Application ID: app_0008)
+*   Elena Carter (ID: per_000351, IDP Account ID: idpa_000351) - MFA Enrollment Status: unknown
+*   Fatima Robinson (ID: per_000498, IDP Account ID: idpa_000498) - MFA Enrollment Status: not_enrolled
+*   Felix Choi (ID: per_001251, IDP Account ID: idpa_001251) - MFA Enrollment Status: unknown
+*   Gabriel Martin (ID: per_002004, IDP Account ID: idpa_002004) - MFA Enrollment Status: unknown
+*   Maya Robinson (ID: per_000198, IDP Account ID: idpa_000198) - MFA Enrollment Status: not_enrolled
+*   Micah Chen (ID: per_000951, IDP Account ID: idpa_000951) - MFA Enrollment Status: unknown
+*   Noor Clark (ID: per_001851, IDP Account ID: idpa_001851) - MFA Enrollment Status: unknown
+*   Ximena Li (ID: per_001404, IDP Account ID: idpa_001404) - MFA Enrollment Status: unknown
+*   Yuki Rossi (ID: per_000798, IDP Account ID: idpa_000798) - MFA Enrollment Status: not_enrolled
+*   Zane Clark (ID: per_001551, IDP Account ID: idpa_001551) - MFA Enrollment Status: unknown
+
+### Corporate VPN (Application ID: app_0007)
+*   Aanya Carter (ID: per_000512, IDP Account ID: idpa_000512) - MFA Enrollment Status: not_enrolled
+*   Aanya Costa (ID: per_000832, IDP Account ID: idpa_000832) - MFA Enrollment Status: unknown
+{"conclusion": "Multiple users lack MFA enrollment on critical applications like AWS Console and Corporate VPN. The full list of affected users is truncated, but initial findings indicate a significant number of users with either 'not_enrolled' or 'unknown' MFA status.", "findings": [{"description": "Fatima Robinson (per_000498) is not enrolled in MFA for AWS Console (app_0008), a critical application.", "severity": "high", "evidence_ids": ["per_000498", "idpa_000498", "aua_001969", "app_0008"]}, {"description": "Maya Robinson (per_000198) is not enrolled in MFA for AWS Console (app_0008), a critical application.", "severity": "high", "evidence_ids": ["per_000198", "idpa_000198", "aua_000779", "app_0008"]}, {"description": "Yuki Rossi (per_000798) is not enrolled in MFA for AWS Console (app_0008), a critical application.", "severity": "high", "evidence_ids": ["per_000798", "idpa_000798", "aua_003159", "app_0008"]}, {"description": "Aanya Carter (per_000512) is not enrolled in MFA for Corporate VPN (app_0007), a critical application.", "severity": "high", "evidence_ids": ["per_000512", "idpa_000512", "aua_002030", "app_0007"]}, {"description": "Several other users have an 'unknown' MFA enrollment status for critical applications, which also poses a security risk.", "severity": "medium", "evidence_ids": ["per_000351", "idpa_000351", "aua_001381", "per_001251", "idpa_001251", "aua_004948", "per_002004", "idpa_002004", "aua_007936", "per_000951", "idpa_000951", "aua_003760", "per_001851", "idpa_001851", "aua_007330", "per_001404", "idpa_001404", "aua_005550", "per_001551", "idpa_001551", "aua_006136", "per_000832", "idpa_000832", "aua_003292"]}], "uncertainty": "The initial query for MFA gaps on critical applications returned a truncated list of users, so the full extent of the problem is unknown. Further investigation would be needed to get a complete list of all users not enrolled in MFA for critical applications.", "steps_used": 1}
+
+
+════════════════════════════════════════════════════════════════
+

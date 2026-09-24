@@ -16,8 +16,6 @@ import json
 import os
 import sys
 
-import pytest
-
 # Ensure project root is on the path when tests are run from a subdirectory
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -25,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ.setdefault("DB_PATH", "input_data/access_snapshot.sqlite")
 os.environ.setdefault("DEBUG_SQL", "false")
 
-from tools import (  # noqa: E402  (import after sys.path patch)
+from tools import (
     find_offboarding_gaps,
     get_application_summary,
     get_audit_events,

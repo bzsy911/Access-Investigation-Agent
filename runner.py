@@ -3,12 +3,17 @@ runner.py — Thin wrapper around the OpenAI-compatible OpenRouter API.
 
 Responsibilities:
 - Load the API key from the environment / .env file.
-- Provide a single `chat_completion()` call that the ReAct loop uses.
-- Convert the OpenRouter response into a normalised format the loop can handle.
+- Provide a single ``chat_completion()`` call that the ReAct loop uses.
+- Convert the OpenRouter response into a normalised dict the loop can consume.
+
+OpenRouter exposes an OpenAI-compatible endpoint, so we use the ``openai``
+Python SDK pointed at ``https://openrouter.ai/api/v1``.  The API key is read
+from the ``OPENROUTER_API_KEY`` environment variable (see ``.env.example``).
 """
 
 import json
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -20,9 +25,14 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def _get_client() -> OpenAI:
+    """Instantiate an OpenAI client pointed at the OpenRouter base URL.
+
+    Raises:
+        OSError: if ``OPENROUTER_API_KEY`` is not set in the environment.
+    """
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             "OPENROUTER_API_KEY is not set. "
             "Copy .env.example to .env and fill in your key."
         )
@@ -33,44 +43,44 @@ def _get_client() -> OpenAI:
 
 
 def chat_completion(
-    messages: list[dict],
-    tools: list[dict],
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
     model: str = DEFAULT_MODEL,
-) -> dict:
-    """
-    Send a chat completion request to OpenRouter.
+) -> dict[str, Any]:
+    """Send a chat completion request to OpenRouter and return a normalised response.
 
-    Returns a normalised dict:
-    {
-        "role": "assistant",
-        "content": str | None,           # text content, if any
-        "tool_calls": [                   # list of tool calls, if any
-            {
-                "id": str,
-                "name": str,
-                "arguments": dict,
-            }
-        ]
-    }
+    Args:
+        messages: Conversation history in OpenAI message format.
+        tools:    List of tool schemas (``TOOL_SCHEMAS`` entries from ``tools.py``).
+                  Pass an empty list to suppress tool calling and force a text reply.
+        model:    Model identifier recognised by OpenRouter (default ``DEFAULT_MODEL``).
+
+    Returns:
+        A dict with keys:
+        - ``"role"``       – always ``"assistant"``
+        - ``"content"``    – text reply from the model, or ``None`` if the model
+                             responded with tool calls only
+        - ``"tool_calls"`` – list of ``{"id", "name", "arguments"}`` dicts,
+                             empty when the model produced no tool calls
     """
     client = _get_client()
 
-    # Convert our tool schemas to OpenAI function-call format
-    openai_tools = [
-        {"type": "function", "function": schema} for schema in tools
-    ]
+    # Convert our tool schemas to the OpenAI function-call wrapper format.
+    # When no tools are available we omit both parameters entirely so the SDK
+    # type overloads resolve correctly (passing None would fail type checking).
+    openai_tools = [{"type": "function", "function": schema} for schema in tools]
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=openai_tools if openai_tools else None,
-        tool_choice="auto" if openai_tools else None,
-    )
+    kwargs: dict[str, Any] = {"model": model, "messages": messages}
+    if openai_tools:
+        kwargs["tools"] = openai_tools
+        kwargs["tool_choice"] = "auto"
+
+    response = client.chat.completions.create(**kwargs)  # type: ignore[arg-type]
 
     choice = response.choices[0]
     msg = choice.message
 
-    tool_calls: list[dict] = []
+    tool_calls: list[dict[str, Any]] = []
     if msg.tool_calls:
         for tc in msg.tool_calls:
             try:

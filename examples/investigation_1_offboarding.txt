@@ -1,0 +1,35 @@
+
+════════════════════════════════════════════════════════════════
+  DEMO 1 [SUCCESSFUL] — Offboarding Residual Access
+════════════════════════════════════════════════════════════════
+
+🔍  Investigation: Which former employees still have active accounts?
+
+  ↳ find_offboarding_gaps({})
+  ↳ lookup_person({"query":"per_001945"})
+  ↳ lookup_person({"query":"per_001941"})
+  ↳ lookup_person({"query":"per_001942"})
+
+════════════════════════════════════════════════════════════════
+  INVESTIGATION RESULT
+════════════════════════════════════════════════════════════════
+
+📋  Structured Finding
+
+  Conclusion : Three former employees, Ariel Chen, Rowan Mercer, and Talia Brooks, still have active accounts across various systems despite their employment having ended. Ariel Chen and Rowan Mercer have active accounts in GitHub, IdP, and Workspace. Talia Brooks has active accounts in GitHub and IdP.
+  Steps used : 4
+  Uncertainty: The reason for the active accounts after the end of employment is not determined by the available tools. Further investigation into offboarding processes or system synchronization might be required.
+
+  Findings (3):
+
+  [1] [HIGH] Ariel Chen (per_001945) has an active GitHub account (gha_001945), an active IdP account (idpa_001945), and an active Workspace account (gwa_001945) even though her employment ended on 2026-08-03. Her last IdP login was 2026-07-20 and last Workspace login was 2026-06-26.
+       Evidence IDs: per_001945, gha_001945, idpa_001945, gwa_001945
+
+  [2] [HIGH] Rowan Mercer (per_001941) has an active GitHub account (gha_001941), an active IdP account (idpa_001941), and an active Workspace account (gwa_001941) despite employment ending on 2026-07-25. His last GitHub activity was 2026-07-30 and last IdP login was 2026-07-06.
+       Evidence IDs: per_001941, gha_001941, idpa_001941, gwa_001941
+
+  [3] [HIGH] Talia Brooks (per_001942) has an active GitHub account (gha_001942) and an active IdP account (idpa_001942) even though her employment ended on 2026-07-08. Her last GitHub activity was 2026-06-22 and last IdP login was 2026-06-21. Her Workspace account is archived.
+       Evidence IDs: per_001942, gha_001942, idpa_001942
+
+════════════════════════════════════════════════════════════════
+
