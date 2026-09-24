@@ -189,23 +189,34 @@ def _print_final_answer(answer: str) -> None:
     if json_block:
         try:
             parsed = json.loads(json_block)
-            print("\n📋  Structured Finding\n")
-            print(f"  Conclusion : {parsed.get('conclusion', 'N/A')}")
-            print(f"  Steps used : {parsed.get('steps_used', 'N/A')}")
-            print(f"  Uncertainty: {parsed.get('uncertainty', 'N/A')}")
-            findings = parsed.get("findings", [])
-            if findings:
-                print(f"\n  Findings ({len(findings)}):")
-                for i, f in enumerate(findings, 1):
-                    severity = f.get("severity", "?").upper()
-                    desc = f.get("description", "")
-                    ids = f.get("evidence_ids", [])
-                    print(f"\n  [{i}] [{severity}] {desc}")
-                    if ids:
-                        id_str = ", ".join(str(x) for x in ids[:10])
-                        if len(ids) > 10:
-                            id_str += f" … (+{len(ids) - 10} more)"
-                        print(f"       Evidence IDs: {id_str}")
+            cp = parsed.get("cannot_proceed")
+            if cp:
+                print("\n⚠️   Cannot Proceed\n")
+                print(f"  Conclusion : {parsed.get('conclusion', 'N/A')}")
+                print(f"  Steps used : {parsed.get('steps_used', 'N/A')}")
+                print(f"\n  Reason     : {cp.get('reason', 'N/A')}")
+                print(f"\n  Missing    : {cp.get('missing_capability', 'N/A')}")
+                alt = cp.get("alternative_command", "")
+                if alt:
+                    print(f"\n  Alternative:\n    {alt}")
+            else:
+                print("\n📋  Structured Finding\n")
+                print(f"  Conclusion : {parsed.get('conclusion', 'N/A')}")
+                print(f"  Steps used : {parsed.get('steps_used', 'N/A')}")
+                print(f"  Uncertainty: {parsed.get('uncertainty', 'N/A')}")
+                findings = parsed.get("findings", [])
+                if findings:
+                    print(f"\n  Findings ({len(findings)}):")
+                    for i, f in enumerate(findings, 1):
+                        severity = f.get("severity", "?").upper()
+                        desc = f.get("description", "")
+                        ids = f.get("evidence_ids", [])
+                        print(f"\n  [{i}] [{severity}] {desc}")
+                        if ids:
+                            id_str = ", ".join(str(x) for x in ids[:10])
+                            if len(ids) > 10:
+                                id_str += f" … (+{len(ids) - 10} more)"
+                            print(f"       Evidence IDs: {id_str}")
         except json.JSONDecodeError:
             print(json_block)
     elif not prose_before:

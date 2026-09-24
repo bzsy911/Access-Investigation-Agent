@@ -214,7 +214,7 @@ All core code is written and tested. The project is runnable from a clean checko
 | `tools.py` | ✅ done | 9 SQL-backed tool functions |
 | `prompts.py` | ✅ done | System prompt + compact schema digest (~600 tokens) |
 | `runner.py` | ✅ done | OpenRouter API wrapper (thin `openai` SDK shim) |
-| `demo.py` | ✅ done | Quick launcher for the two prepared demo investigations |
+| `demo.py` | ✅ done | Quick launcher for three prepared demo investigations (offboarding, MFA, drive permissions) |
 | `tests/test_tools.py` | ✅ done | 54 unit tests — all passing |
 | `README.md` | ✅ done | Setup, usage, architecture, limitations |
 | `requirements.txt` | ✅ done | `openai>=1.30.0`, `python-dotenv>=1.0.0` |
@@ -294,3 +294,46 @@ may not survive.
 
 **Fix:** Test was updated to assert `len > 0` and that every returned person's
 name contains "Rowan" — not that one specific person_id appears.
+
+---
+
+### 5. Stale model ID caused 404 on first real run (fixed)
+
+**Problem:** The default model was set to `google/gemini-2.0-flash-001`, which
+is no longer listed on OpenRouter. The first call to `python demo.py 1` returned
+a 404.
+
+**Fix:** Updated the default in `runner.py` to `google/gemini-2.5-flash`, which
+is the current equivalent — same speed and cost tier, 1 M context window,
+strong function-calling.
+
+**Lesson:** Always verify model IDs against the live
+`GET https://openrouter.ai/api/v1/models` endpoint before finalising defaults.
+
+---
+
+### 6. Agent exited silently on tool gap (fixed)
+
+**Problem:** When demo 3 ("Show drive permissions for ended employees") ran, the
+agent correctly identified that `get_drive_permissions` requires a specific
+`account_id` or `resource_id` — it cannot enumerate permissions across an entire
+cohort. However, instead of emitting a structured final answer, the model
+returned a free-form question ("Would you like me to do that?") and the loop
+terminated. The output was ambiguous and provided no actionable information.
+
+**Root cause:** The system prompt had no instruction for the cannot-proceed case,
+so the model fell back to conversational behaviour.
+
+**Fix:** Added a "When you cannot proceed" section to `SYSTEM_PROMPT` in
+`prompts.py`. The model is now required to emit the standard final-answer JSON
+immediately, extended with a `cannot_proceed` object containing:
+- `reason` — why the available tools are insufficient.
+- `missing_capability` — a description of a tool that would enable the investigation, with a suggested name.
+- `alternative_command` — a ready-to-paste CLI command for the closest supported investigation.
+
+`_print_final_answer()` in `agent.py` detects the `cannot_proceed` key and
+renders it under a distinct `⚠️  Cannot Proceed` header.
+
+**Lesson:** Every failure mode visible to the user needs an explicit output
+contract in the system prompt. Silent exits or free-form questions are not
+acceptable outputs for a CLI tool.

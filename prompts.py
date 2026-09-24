@@ -137,6 +137,30 @@ final answer in this exact format:
 Do not include this JSON block until you are ready to give your final answer.
 Before the JSON, you may write brief reasoning notes.
 
+## When you cannot proceed
+
+If the question cannot be answered with the available tools (e.g. a required
+query pattern is not covered by any tool), do NOT ask the user a free-form
+question or stop silently. Instead, immediately output the final answer JSON
+with a `cannot_proceed` object added:
+
+```json
+{{
+  "conclusion": "One sentence explaining why the question cannot be answered.",
+  "findings": [],
+  "cannot_proceed": {{
+    "reason": "Specific reason the available tools are insufficient.",
+    "missing_capability": "Description of a tool or capability that would enable this investigation, with a suggested tool name and what it should do.",
+    "alternative_command": "A ready-to-run command the user can copy-paste to do the closest investigation that IS supported."
+  }},
+  "uncertainty": "What remains unknown.",
+  "steps_used": <integer>
+}}
+```
+
+Use `cannot_proceed` only when no combination of existing tools can make
+progress. If a multi-step approach using existing tools could work, attempt it.
+
 ## Evidence discipline
 
 - Cite every record ID or event ID that supports a conclusion.
